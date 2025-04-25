@@ -16,22 +16,17 @@ SYMBOLS = [
     "ETHUSDT", "BTCUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
     "ADAUSDT", "AVAXUSDT", "LTCUSDT", "DOGEUSDT"
 ]
-LEVERAGE = 20
-INITIAL_SL_PERCENT = 0.40
+LEVERAGE = 30
+INITIAL_SL_PERCENT = 0.08
 stepwise_tp = [
-    {"trigger": 0.45, "take": 0.40},
-    {"trigger": 0.55, "take": 0.50},
-    {"trigger": 0.65, "take": 0.60},
-    {"trigger": 0.75, "take": 0.70},
-    {"trigger": 0.85, "take": 0.80},
-    {"trigger": 0.95, "take": 0.90},
-    {"trigger": 1.05, "take": 1.00},
-    {"trigger": 1.15, "take": 1.10},
-    {"trigger": 1.25, "take": 1.20},
-    {"trigger": 1.35, "take": 1.30},
-    {"trigger": 1.45, "take": 1.40},
-    {"trigger": 1.55, "take": 1.50}
+    {"trigger": 0.08, "take": 0.05},
+    {"trigger": 0.18, "take": 0.15},
+    {"trigger": 0.28, "take": 0.25},
+    {"trigger": 0.38, "take": 0.35},
+    {"trigger": 0.48, "take": 0.45},
+    {"trigger": 0.58, "take": 0.55}
 ]
+
 
 # === Dinamik Miktar Hesaplama ===
 def get_usdt_balance():
