@@ -65,12 +65,25 @@ def calculate_dynamic_quantity(symbol, rsi, direction):
         else:
             return 0
 
-        usdt = balance * portion
-        qty = round(usdt / price, 4)
-        return qty
+        usdt_amount = balance * portion
+        qty = usdt_amount / price
+
+        # 🔧 Binance’ın lot size filtresine göre miktar hassasiyetini alalım
+        exchange_info = client.futures_exchange_info()
+        for symbol_info in exchange_info['symbols']:
+            if symbol_info['symbol'] == symbol:
+                for f in symbol_info['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        step_size = float(f['stepSize'])
+                        precision = abs(int(round(-1 * (step_size).as_integer_ratio()[1].bit_length() - 1)))
+                        qty = round(qty, precision)
+                        return qty
+
+        return round(qty, 3)  # fallback: 3 basamak
     except Exception as e:
-        print(f"⚠️ Miktar hesaplanamadı ({symbol}): {e}")
+        print(f"⚠️ {symbol} miktar hesaplama hatası: {e}")
         return 0
+
 
 def set_leverage(symbol):
     try:
