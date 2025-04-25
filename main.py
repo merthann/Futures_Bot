@@ -192,7 +192,7 @@ def open_position(symbol, side, direction):
             side="SELL" if side == "BUY" else "BUY",
             type="STOP_MARKET",
             stopPrice=str(sl_price),
-            closePosition=True
+            closePosition=True,
             reduceOnly=True
         )
         print(f"🛡️ {symbol}: SL kuruldu → {sl_price}")
