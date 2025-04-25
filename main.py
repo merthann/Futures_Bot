@@ -65,10 +65,13 @@ def calculate_dynamic_quantity(symbol, rsi, direction):
         else:
             return 0
 
-        usdt_amount = balance * portion
-        qty = usdt_amount / price
+        # 💥 Yeni: pozisyon büyüklüğü = (balance * portion)
+        position_size_usdt = balance * portion  # Örn: 50 USDT
 
-        # 🔧 Binance’ın lot size filtresine göre miktar hassasiyetini alalım
+        # 💥 Gerçek miktar = pozisyon büyüklüğü / fiyat / kaldıraç
+        qty = position_size_usdt * LEVERAGE / price
+
+        # 🔍 Binance hassasiyetini alalım
         exchange_info = client.futures_exchange_info()
         for symbol_info in exchange_info['symbols']:
             if symbol_info['symbol'] == symbol:
@@ -79,11 +82,10 @@ def calculate_dynamic_quantity(symbol, rsi, direction):
                         qty = round(qty, precision)
                         return qty
 
-        return round(qty, 3)  # fallback: 3 basamak
+        return round(qty, 3)
     except Exception as e:
         print(f"⚠️ {symbol} miktar hesaplama hatası: {e}")
         return 0
-
 
 def set_leverage(symbol):
     try:
@@ -140,24 +142,29 @@ def get_data(symbol, interval="15m", limit=100):
 
 def monitor_position(symbol, direction, qty, entry_price):
     try:
-        while is_position_open(symbol):
-            price = float(client.get_symbol_ticker(symbol=symbol)['price'])
-            change = (price - entry_price)/entry_price if direction == "BUY" else (entry_price - price)/entry_price
+        for level in stepwise_tp:
+            while is_position_open(symbol):
+                price = float(client.get_symbol_ticker(symbol=symbol)['price'])
+                change = (price - entry_price) / entry_price if direction == "BUY" else (entry_price - price) / entry_price
 
-            for level in stepwise_tp:
                 if change >= level["trigger"]:
-                    print(f"🎯 {symbol} → TP {int(level['take']*100)}% hedefe ulaştı!")
+                    take_price = round(entry_price * (1 + level["take"]), 2) if direction == "BUY" else round(entry_price * (1 - level["take"]), 2)
+
+                    print(f"🎯 {symbol} → {int(level['take']*100)}% TP hedefi geldi! Emir gönderiliyor → {take_price}")
+
                     client.futures_create_order(
                         symbol=symbol,
                         side="SELL" if direction == "BUY" else "BUY",
-                        type="MARKET",
-                        quantity=qty,
+                        type="TAKE_PROFIT_MARKET",
+                        stopPrice=str(take_price),
+                        closePosition=True,
                         reduceOnly=True
                     )
                     return
-            time.sleep(30)
+                time.sleep(15)
     except Exception as e:
         print(f"❌ {symbol} için TP izleme hatası: {e}")
+
 
 def open_position(symbol, side, direction):
     try:
@@ -179,13 +186,14 @@ def open_position(symbol, side, direction):
         )
         print(f"🚀 {symbol}: {side} pozisyon açıldı — Miktar: {qty}")
 
-        sl_price = round(entry * (1 - INITIAL_SL_PERCENT), 2) if side == "BUY" else round(entry * (1 + INITIAL_SL_PERCENT), 2)
+        sl_price = round(entry * (1 - 0.08), 2) if side == "BUY" else round(entry * (1 + 0.08), 2)
         client.futures_create_order(
             symbol=symbol,
             side="SELL" if side == "BUY" else "BUY",
             type="STOP_MARKET",
             stopPrice=str(sl_price),
             closePosition=True
+            reduceOnly=True
         )
         print(f"🛡️ {symbol}: SL kuruldu → {sl_price}")
 
