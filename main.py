@@ -1,6 +1,7 @@
 import threading
 import time
 import os
+import math
 from binance.client import Client
 import pandas as pd
 import ta
@@ -18,15 +19,22 @@ SYMBOLS = [
 ]
 LEVERAGE = 30
 INITIAL_SL_PERCENT = 0.08
-stepwise_tp = [
-    {"trigger": 0.08, "take": 0.05},
-    {"trigger": 0.18, "take": 0.15},
-    {"trigger": 0.28, "take": 0.25},
-    {"trigger": 0.38, "take": 0.35},
-    {"trigger": 0.48, "take": 0.45},
-    {"trigger": 0.58, "take": 0.55}
-]
 
+stepwise_sl = [
+    {"trigger": 0.45, "sl": 0.40},
+    {"trigger": 0.55, "sl": 0.45},
+    {"trigger": 0.65, "sl": 0.55},
+    {"trigger": 0.75, "sl": 0.65},
+    {"trigger": 0.85, "sl": 0.75},
+    {"trigger": 0.95, "sl": 0.85},
+    {"trigger": 1.05, "sl": 0.95},
+    {"trigger": 1.15, "sl": 1.05},
+    {"trigger": 1.25, "sl": 1.15},
+    {"trigger": 1.35, "sl": 1.25},
+    {"trigger": 1.45, "sl": 1.35},
+    {"trigger": 1.55, "sl": 1.45},
+    {"trigger": 1.65, "sl": 1.55},
+]
 
 # === Dinamik Miktar Hesaplama ===
 def get_usdt_balance():
@@ -65,20 +73,16 @@ def calculate_dynamic_quantity(symbol, rsi, direction):
         else:
             return 0
 
-        # 💥 Yeni: pozisyon büyüklüğü = (balance * portion)
-        position_size_usdt = balance * portion  # Örn: 50 USDT
-
-        # 💥 Gerçek miktar = pozisyon büyüklüğü / fiyat / kaldıraç
+        position_size_usdt = balance * portion
         qty = position_size_usdt * LEVERAGE / price
 
-        # 🔍 Binance hassasiyetini alalım
         exchange_info = client.futures_exchange_info()
-        for symbol_info in exchange_info['symbols']:
-            if symbol_info['symbol'] == symbol:
-                for f in symbol_info['filters']:
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                for f in s['filters']:
                     if f['filterType'] == 'LOT_SIZE':
                         step_size = float(f['stepSize'])
-                        precision = abs(int(round(-1 * (step_size).as_integer_ratio()[1].bit_length() - 1)))
+                        precision = int(round(-math.log(step_size, 10)))
                         qty = round(qty, precision)
                         return qty
 
@@ -109,7 +113,6 @@ def is_position_open(symbol):
             time.sleep(10)
     return False
 
-
 def rsi_confirmed(df, direction="long"):
     rsi = df['rsi'].iloc[-1]
     if direction == "long" and rsi < 30:
@@ -117,7 +120,6 @@ def rsi_confirmed(df, direction="long"):
     elif direction == "short" and rsi > 70:
         return True
     return False
-
 
 def get_data(symbol, interval="15m", limit=100):
     retries = 3
@@ -139,32 +141,35 @@ def get_data(symbol, interval="15m", limit=100):
     print(f"❌ {symbol}: Veri alınamadı, fonksiyon boş döndü.")
     return None
 
+def update_stop_loss(symbol, new_sl_price, direction):
+    try:
+        print(f"🛡️ {symbol}: Yeni Stop-Loss ayarlanıyor → {new_sl_price}")
+        client.futures_create_order(
+            symbol=symbol,
+            side="SELL" if direction == "BUY" else "BUY",
+            type="STOP_MARKET",
+            stopPrice=str(new_sl_price),
+            closePosition=True,
+            reduceOnly=True
+        )
+    except Exception as e:
+        print(f"❌ {symbol}: Stop-Loss güncelleme hatası: {e}")
 
 def monitor_position(symbol, direction, qty, entry_price):
     try:
-        for level in stepwise_tp:
-            while is_position_open(symbol):
-                price = float(client.get_symbol_ticker(symbol=symbol)['price'])
-                change = (price - entry_price) / entry_price if direction == "BUY" else (entry_price - price) / entry_price
+        next_level = 0
+        while is_position_open(symbol) and next_level < len(stepwise_sl):
+            price = float(client.get_symbol_ticker(symbol=symbol)['price'])
+            change = (price - entry_price) / entry_price if direction == "BUY" else (entry_price - price) / entry_price
 
-                if change >= level["trigger"]:
-                    take_price = round(entry_price * (1 + level["take"]), 2) if direction == "BUY" else round(entry_price * (1 - level["take"]), 2)
-
-                    print(f"🎯 {symbol} → {int(level['take']*100)}% TP hedefi geldi! Emir gönderiliyor → {take_price}")
-
-                    client.futures_create_order(
-                        symbol=symbol,
-                        side="SELL" if direction == "BUY" else "BUY",
-                        type="TAKE_PROFIT_MARKET",
-                        stopPrice=str(take_price),
-                        closePosition=True,
-                        reduceOnly=True
-                    )
-                    return
-                time.sleep(15)
+            level = stepwise_sl[next_level]
+            if change >= level["trigger"]:
+                new_sl_price = round(entry_price * (1 + level["sl"]), 5) if direction == "BUY" else round(entry_price * (1 - level["sl"]), 5)
+                update_stop_loss(symbol, new_sl_price, direction)
+                next_level += 1
+            time.sleep(10)
     except Exception as e:
-        print(f"❌ {symbol} için TP izleme hatası: {e}")
-
+        print(f"❌ {symbol} için SL izleme hatası: {e}")
 
 def open_position(symbol, side, direction):
     try:
@@ -186,21 +191,12 @@ def open_position(symbol, side, direction):
         )
         print(f"🚀 {symbol}: {side} pozisyon açıldı — Miktar: {qty}")
 
-        sl_price = round(entry * (1 - 0.08), 2) if side == "BUY" else round(entry * (1 + 0.08), 2)
-        client.futures_create_order(
-            symbol=symbol,
-            side="SELL" if side == "BUY" else "BUY",
-            type="STOP_MARKET",
-            stopPrice=str(sl_price),
-            closePosition=True,
-            reduceOnly=True
-        )
-        print(f"🛡️ {symbol}: SL kuruldu → {sl_price}")
+        sl_price = round(entry * (1 - INITIAL_SL_PERCENT), 5) if side == "BUY" else round(entry * (1 + INITIAL_SL_PERCENT), 5)
+        update_stop_loss(symbol, sl_price, side)
 
         threading.Thread(target=monitor_position, args=(symbol, side, qty, entry)).start()
     except Exception as e:
         print(f"❌ {symbol} için pozisyon açma hatası: {e}")
-
 
 # === Formasyonlar ===
 from patterns.double_bottom import is_double_bottom
@@ -215,12 +211,17 @@ from patterns.channel_up import is_channel_up
 
 # === Coin Tarayıcı ===
 def scan_symbol(symbol):
+    position_open_printed = False
     while True:
         try:
             if is_position_open(symbol):
-                print(f"⚠️ {symbol} pozisyonu zaten açık.")
+                if not position_open_printed:
+                    print(f"⚠️ {symbol} pozisyonu zaten açık.")
+                    position_open_printed = True
                 time.sleep(60)
                 continue
+            else:
+                position_open_printed = False
 
             df = get_data(symbol)
             if df is None:
@@ -267,5 +268,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
