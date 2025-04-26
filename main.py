@@ -208,6 +208,13 @@ from patterns.triangle_desc import is_desc_triangle
 from patterns.triangle_asc import is_asc_triangle
 from patterns.channel_down import is_channel_down
 from patterns.channel_up import is_channel_up
+from patterns.rising_wedge import is_rising_wedge
+from patterns.falling_wedge import is_falling_wedge
+from patterns.bullish_flag import is_bullish_flag
+from patterns.bearish_flag import is_bearish_flag
+from patterns.bullish_pennant import is_bullish_pennant
+from patterns.bearish_pennant import is_bearish_pennant
+
 
 # === Coin Tarayıcı ===
 def scan_symbol(symbol):
@@ -237,7 +244,13 @@ def scan_symbol(symbol):
                 (is_asc_triangle, "BUY", "long", "Ascending Triangle"),
                 (is_desc_triangle, "SELL", "short", "Descending Triangle"),
                 (is_channel_down, "BUY", "long", "Channel Down"),
-                (is_channel_up, "SELL", "short", "Channel Up")
+                (is_channel_up, "SELL", "short", "Channel Up"),
+                (is_rising_wedge, "SELL", "short", "Rising Wedge"),
+                (is_falling_wedge, "BUY", "long", "Falling Wedge"),
+                (is_bullish_flag, "BUY", "long", "Bullish Flag"),
+                (is_bearish_flag, "SELL", "short", "Bearish Flag"),
+                (is_bullish_pennant, "BUY", "long", "Bullish Pennant"),
+                (is_bearish_pennant, "SELL", "short", "Bearish Pennant")
             ]
 
             for func, side, direction, name in patterns:
