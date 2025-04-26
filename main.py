@@ -158,7 +158,6 @@ def update_stop_loss(symbol, new_sl_price, direction):
             type="STOP_MARKET",
             stopPrice=str(new_sl_price),
             closePosition=True,
-            reduceOnly=True
         )
     except Exception as e:
         print(f"❌ {symbol}: Stop-Loss güncelleme hatası: {e}")
