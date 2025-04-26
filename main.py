@@ -201,6 +201,8 @@ def open_position(symbol, side, direction):
         )
         print(f"🚀 {symbol}: {side} pozisyon açıldı — Miktar: {qty}")
 
+        time.sleep(3)
+
         # Başlangıçta %20 zarar için initial Stop-Loss koy
         sl_price = round(entry * (1 - INITIAL_SL_PERCENT), 5) if side == "BUY" else round(entry * (1 + INITIAL_SL_PERCENT), 5)
         update_stop_loss(symbol, sl_price, side)
