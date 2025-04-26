@@ -141,22 +141,65 @@ def get_data(symbol, interval="15m", limit=100):
     print(f"❌ {symbol}: Veri alınamadı, fonksiyon boş döndü.")
     return None
 
+def create_initial_stop_loss(symbol, sl_price, direction):
+    try:
+        print(f"🛡️ {symbol}: İlk Stop-Loss kuruluyor → {sl_price}")
+
+        # Coin'in tick size'ını çek
+        exchange_info = client.futures_exchange_info()
+        tick_size = 0.01  # Default
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                for f in s['filters']:
+                    if f['filterType'] == 'PRICE_FILTER':
+                        tick_size = float(f['tickSize'])
+                        break
+
+        corrected_sl_price = round_step_size(sl_price, tick_size)
+
+        client.futures_create_order(
+            symbol=symbol,
+            side="SELL" if direction == "BUY" else "BUY",
+            type="STOP_MARKET",
+            stopPrice=str(corrected_sl_price),
+            closePosition=True,
+        )
+    except Exception as e:
+        print(f"❌ {symbol}: İlk Stop-Loss kurulamadı: {e}")
+
+
+def round_step_size(price, step_size):
+    return round(round(price / step_size) * step_size, 8)
+
 def update_stop_loss(symbol, new_sl_price, direction):
     try:
         # Önce eski STOP_MARKET emrini iptal et
         orders = client.futures_get_open_orders(symbol=symbol)
         for order in orders:
-            if order['type'] == 'STOP_MARKET' and order['reduceOnly']:
+            if order['type'] == 'STOP_MARKET' and order['closePosition']:
                 client.futures_cancel_order(symbol=symbol, orderId=order['orderId'])
                 print(f"❌ {symbol}: Eski Stop-Loss iptal edildi.")
 
         # Şimdi yeni STOP_MARKET emrini kur
         print(f"🛡️ {symbol}: Yeni Stop-Loss kuruluyor → {new_sl_price}")
+
+        # Coin'in tick size'ını çek
+        exchange_info = client.futures_exchange_info()
+        tick_size = 0.01  # Default
+        for s in exchange_info['symbols']:
+            if s['symbol'] == symbol:
+                for f in s['filters']:
+                    if f['filterType'] == 'PRICE_FILTER':
+                        tick_size = float(f['tickSize'])
+                        break
+
+        corrected_sl_price = round_step_size(new_sl_price, tick_size)
+
         client.futures_create_order(
             symbol=symbol,
             side="SELL" if direction == "BUY" else "BUY",
             type="STOP_MARKET",
-            stopPrice=str(new_sl_price),
+            stopPrice=str(corrected_sl_price),
             closePosition=True,
         )
     except Exception as e:
@@ -204,7 +247,7 @@ def open_position(symbol, side, direction):
 
         # Başlangıçta %20 zarar için initial Stop-Loss koy
         sl_price = round(entry * (1 - INITIAL_SL_PERCENT), 5) if side == "BUY" else round(entry * (1 + INITIAL_SL_PERCENT), 5)
-        update_stop_loss(symbol, sl_price, side)
+        create_initial_stop_loss(symbol, sl_price, side)
 
         # Pozisyonu kâr için izlemeye başla
         threading.Thread(target=monitor_position, args=(symbol, side, qty, entry)).start()
