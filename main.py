@@ -254,6 +254,10 @@ def monitor_position(symbol, direction, qty, entry_price):
 
 def open_position(symbol, side, direction):
     try:
+        if is_position_open(symbol):
+            print(f"⚠️ {symbol}: Zaten açık pozisyon var, yeni pozisyon açılmadı.")
+            return
+
         df = get_data(symbol)
         rsi = df['rsi'].iloc[-1]
         qty = calculate_dynamic_quantity(symbol, rsi, direction)
