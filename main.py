@@ -141,9 +141,21 @@ def get_data(symbol, interval="15m", limit=100):
     print(f"❌ {symbol}: Veri alınamadı, fonksiyon boş döndü.")
     return None
 
-def create_initial_stop_loss(symbol, sl_price, direction):
+def create_initial_stop_loss(symbol, entry_price, qty, direction):
     try:
-        print(f"🛡️ {symbol}: İlk Stop-Loss kuruluyor → {sl_price}")
+        print(f"🛡️ {symbol}: İlk Stop-Loss hesaplanıyor")
+
+        # Pozisyonun toplam USDT değeri
+        position_value = entry_price * qty
+
+        # Maksimum kabul edilebilir kayıp (örneğin %20)
+        max_loss = position_value * INITIAL_SL_PERCENT
+
+        # Stop-loss tetiklenecek fiyatı hesapla
+        if direction == "BUY":
+            sl_price = (position_value - max_loss) / qty
+        else:  # SELL için
+            sl_price = (position_value + max_loss) / qty
 
         # Coin'in tick size'ını çek
         exchange_info = client.futures_exchange_info()
@@ -164,8 +176,12 @@ def create_initial_stop_loss(symbol, sl_price, direction):
             stopPrice=str(corrected_sl_price),
             closePosition=True,
         )
+
+        print(f"✅ {symbol}: İlk Stop-Loss kuruldu → {corrected_sl_price}")
+
     except Exception as e:
         print(f"❌ {symbol}: İlk Stop-Loss kurulamadı: {e}")
+
 
 
 def round_step_size(price, step_size):
@@ -208,18 +224,29 @@ def update_stop_loss(symbol, new_sl_price, direction):
 def monitor_position(symbol, direction, qty, entry_price):
     try:
         next_level = 0
+        initial_position_value = entry_price * qty  # Pozisyonu açtığımızdaki USDT değeri
+
         while is_position_open(symbol) and next_level < len(stepwise_sl):
             price = float(client.get_symbol_ticker(symbol=symbol)['price'])
-            change = (price - entry_price) / entry_price if direction == "BUY" else (entry_price - price) / entry_price
+            current_position_value = price * qty  # Şu anki pozisyonun değeri
 
-            # Kâr kademelerine ulaşınca SL güncelle
+            # Gerçekleşen kâr (USDT cinsinden)
+            profit_usdt = current_position_value - initial_position_value if direction == "BUY" else initial_position_value - current_position_value
+
+            # Kâr yüzdesi
+            profit_percentage = profit_usdt / initial_position_value
+
             level = stepwise_sl[next_level]
-            if change >= level["trigger"]:
-                # Yeni SL fiyatı
-                new_sl_price = round(entry_price * (1 + level["sl"]), 5) if direction == "BUY" else round(entry_price * (1 - level["sl"]), 5)
+
+            if profit_percentage >= level["trigger"]:
+                # Yeni Stop-Loss seviyesi (kârın belli yüzdesine göre)
+                target_usdt_value = initial_position_value * (1 + level["sl"]) if direction == "BUY" else initial_position_value * (1 - level["sl"])
+                new_sl_price = target_usdt_value / qty
+
                 update_stop_loss(symbol, new_sl_price, direction)
                 next_level += 1  # Sonraki kademeye geç
             time.sleep(10)
+
     except Exception as e:
         print(f"❌ {symbol} için SL izleme hatası: {e}")
 
@@ -246,8 +273,7 @@ def open_position(symbol, side, direction):
         time.sleep(3)
 
         # Başlangıçta %20 zarar için initial Stop-Loss koy
-        sl_price = round(entry * (1 - INITIAL_SL_PERCENT), 5) if side == "BUY" else round(entry * (1 + INITIAL_SL_PERCENT), 5)
-        create_initial_stop_loss(symbol, sl_price, side)
+        create_initial_stop_loss(symbol, entry, qty, side)
 
         # Pozisyonu kâr için izlemeye başla
         threading.Thread(target=monitor_position, args=(symbol, side, qty, entry)).start()
