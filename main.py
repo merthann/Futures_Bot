@@ -226,31 +226,31 @@ def update_stop_loss(symbol, new_sl_price, direction):
 def monitor_position(symbol, direction, qty, entry_price):
     try:
         next_level = 0
-        initial_position_value = entry_price * qty  # Pozisyonu açtığımızdaki USDT değeri
+        margin = (entry_price * qty) / LEVERAGE  # Burayı değiştirdim
 
         while is_position_open(symbol) and next_level < len(stepwise_sl):
             price = float(client.get_symbol_ticker(symbol=symbol)['price'])
-            current_position_value = price * qty  # Şu anki pozisyonun değeri
 
             # Gerçekleşen kâr (USDT cinsinden)
-            profit_usdt = current_position_value - initial_position_value if direction == "BUY" else initial_position_value - current_position_value
+            profit_usdt = (price - entry_price) * qty if direction == "BUY" else (entry_price - price) * qty
 
-            # Kâr yüzdesi
-            profit_percentage = profit_usdt / initial_position_value
+            # Kâr yüzdesi (artık margin'e göre doğru hesaplanıyor)
+            profit_percentage = profit_usdt / margin
 
             level = stepwise_sl[next_level]
 
             if profit_percentage >= level["trigger"]:
-                # Yeni Stop-Loss seviyesi (kârın belli yüzdesine göre)
-                target_usdt_value = initial_position_value * (1 + level["sl"]) if direction == "BUY" else initial_position_value * (1 - level["sl"])
-                new_sl_price = target_usdt_value / qty
+                # Yeni Stop-Loss seviyesi
+                target_margin_value = margin * (1 + level["sl"])
+                new_sl_price = entry_price + (target_margin_value - margin) / qty if direction == "BUY" else entry_price - (target_margin_value - margin) / qty
 
                 update_stop_loss(symbol, new_sl_price, direction)
-                next_level += 1  # Sonraki kademeye geç
+                next_level += 1
             time.sleep(10)
 
     except Exception as e:
         print(f"❌ {symbol} için SL izleme hatası: {e}")
+
 
 def open_position(symbol, side, direction):
     try:
