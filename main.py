@@ -10,7 +10,7 @@ import ta
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
 client = Client(api_key, api_secret)
-client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+# client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
 # === Ayarlar ===
 SYMBOLS = [
@@ -145,17 +145,15 @@ def create_initial_stop_loss(symbol, entry_price, qty, direction):
     try:
         print(f"🛡️ {symbol}: İlk Stop-Loss hesaplanıyor")
 
-        # Pozisyonun toplam USDT değeri
         position_value = entry_price * qty
+        margin = position_value / LEVERAGE
+        max_loss_amount = margin * INITIAL_SL_PERCENT
+        price_move_needed = max_loss_amount / qty
 
-        # Maksimum kabul edilebilir kayıp (örneğin %20)
-        max_loss = position_value * INITIAL_SL_PERCENT
-
-        # Stop-loss tetiklenecek fiyatı hesapla
         if direction == "BUY":
-            sl_price = (position_value - max_loss) / qty
-        else:  # SELL için
-            sl_price = (position_value + max_loss) / qty
+            sl_price = entry_price - price_move_needed
+        else:
+            sl_price = entry_price + price_move_needed
 
         # Coin'in tick size'ını çek
         exchange_info = client.futures_exchange_info()
@@ -181,6 +179,7 @@ def create_initial_stop_loss(symbol, entry_price, qty, direction):
 
     except Exception as e:
         print(f"❌ {symbol}: İlk Stop-Loss kurulamadı: {e}")
+
 
 
 
