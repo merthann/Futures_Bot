@@ -5,7 +5,10 @@ import math
 from binance.client import Client
 import pandas as pd
 import ta
+from dotenv import load_dotenv
 
+
+load_dotenv()
 # === Binance API Bilgileri ===
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
