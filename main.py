@@ -7,13 +7,12 @@ import pandas as pd
 import ta
 from dotenv import load_dotenv
 
-
 load_dotenv()
+
 # === Binance API Bilgileri ===
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
 client = Client(api_key, api_secret)
-# client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
 
 # === Ayarlar ===
 SYMBOLS = [
@@ -21,25 +20,27 @@ SYMBOLS = [
     "ADAUSDT", "AVAXUSDT", "LTCUSDT", "DOGEUSDT"
 ]
 LEVERAGE = 30
-INITIAL_SL_PERCENT = 0.2
 
+# === Stepwise SL tablosu ===
 stepwise_sl = [
-    {"trigger": 0.45, "sl": 0.40},
-    {"trigger": 0.55, "sl": 0.45},
-    {"trigger": 0.65, "sl": 0.55},
-    {"trigger": 0.75, "sl": 0.65},
-    {"trigger": 0.85, "sl": 0.75},
-    {"trigger": 0.95, "sl": 0.85},
-    {"trigger": 1.05, "sl": 0.95},
-    {"trigger": 1.15, "sl": 1.05},
-    {"trigger": 1.25, "sl": 1.15},
-    {"trigger": 1.35, "sl": 1.25},
-    {"trigger": 1.45, "sl": 1.35},
-    {"trigger": 1.55, "sl": 1.45},
-    {"trigger": 1.65, "sl": 1.55},
+    {"trigger": 0.015, "sl": 0.0134},
+    {"trigger": 0.0183, "sl": 0.0167},
+    {"trigger": 0.0215, "sl": 0.0200},
+    {"trigger": 0.025, "sl": 0.0234},
+    {"trigger": 0.0283, "sl": 0.0267},
+    {"trigger": 0.0315, "sl": 0.0300},
+    {"trigger": 0.035, "sl": 0.0334},
+    {"trigger": 0.0383, "sl": 0.0367},
+    {"trigger": 0.0415, "sl": 0.0400},
+    {"trigger": 0.045, "sl": 0.0434},
+    {"trigger": 0.0484, "sl": 0.0470},
+    {"trigger": 0.0516, "sl": 0.0500},
 ]
 
-# === Dinamik Miktar Hesaplama ===
+# === Yardımcı Fonksiyonlar ===
+def round_step_size(price, step_size):
+    return round(round(price / step_size) * step_size, 8)
+
 def get_usdt_balance():
     try:
         balances = client.futures_account_balance()
@@ -57,20 +58,20 @@ def calculate_dynamic_quantity(symbol, rsi, direction):
 
         if direction == "long":
             if rsi < 10:
-                portion = 0.10
+                portion = 0.12
             elif rsi < 20:
-                portion = 0.08
+                portion = 0.1
             elif rsi < 30:
-                portion = 0.05
+                portion = 0.08
             else:
                 return 0
         elif direction == "short":
             if rsi > 90:
-                portion = 0.10
+                portion = 0.12
             elif rsi > 80:
-                portion = 0.08
+                portion = 0.1
             elif rsi > 70:
-                portion = 0.05
+                portion = 0.08
             else:
                 return 0
         else:
@@ -112,55 +113,22 @@ def is_position_open(symbol):
         except Exception as e:
             print(f"⚠️ Pozisyon kontrol hatası ({symbol}): {e}")
             retries -= 1
-            print(f"🔁 {symbol}: {retries} tekrar hakkı kaldı, 10 saniye bekleniyor...")
             time.sleep(10)
     return False
 
-def rsi_confirmed(df, direction="long"):
-    rsi = df['rsi'].iloc[-1]
-    if direction == "long" and rsi < 30:
-        return True
-    elif direction == "short" and rsi > 70:
-        return True
-    return False
-
-def get_data(symbol, interval="15m", limit=100):
-    retries = 3
-    while retries > 0:
-        try:
-            klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
-            df = pd.DataFrame(klines, columns=[
-                'time','open','high','low','close','volume',
-                '_','__','___','____','_____','______'
-            ])
-            df = df[['open','high','low','close','volume']].astype(float)
-            df['rsi'] = ta.momentum.RSIIndicator(close=df['close']).rsi()
-            return df
-        except Exception as e:
-            print(f"🔁 {symbol} verisi alınamadı: {e}")
-            retries -= 1
-            print(f"🔁 {symbol}: {retries} tekrar hakkı kaldı, 10 saniye bekleniyor...")
-            time.sleep(10)
-    print(f"❌ {symbol}: Veri alınamadı, fonksiyon boş döndü.")
-    return None
-
+# === Stop Loss Fonksiyonları ===
 def create_initial_stop_loss(symbol, entry_price, qty, direction):
     try:
         print(f"🛡️ {symbol}: İlk Stop-Loss hesaplanıyor")
-
-        position_value = entry_price * qty
-        margin = position_value / LEVERAGE
-        max_loss_amount = margin * INITIAL_SL_PERCENT
-        price_move_needed = max_loss_amount / qty
+        price_move_pct = 0.0085  # %0.85 düşüş
 
         if direction == "BUY":
-            sl_price = entry_price - price_move_needed
+            sl_price = entry_price * (1 - price_move_pct)
         else:
-            sl_price = entry_price + price_move_needed
+            sl_price = entry_price * (1 + price_move_pct)
 
-        # Coin'in tick size'ını çek
         exchange_info = client.futures_exchange_info()
-        tick_size = 0.01  # Default
+        tick_size = 0.01
         for s in exchange_info['symbols']:
             if s['symbol'] == symbol:
                 for f in s['filters']:
@@ -177,33 +145,24 @@ def create_initial_stop_loss(symbol, entry_price, qty, direction):
             stopPrice=str(corrected_sl_price),
             closePosition=True,
         )
-
         print(f"✅ {symbol}: İlk Stop-Loss kuruldu → {corrected_sl_price}")
 
     except Exception as e:
         print(f"❌ {symbol}: İlk Stop-Loss kurulamadı: {e}")
 
-
-
-
-def round_step_size(price, step_size):
-    return round(round(price / step_size) * step_size, 8)
-
 def update_stop_loss(symbol, new_sl_price, direction):
     try:
-        # Önce eski STOP_MARKET emrini iptal et
         orders = client.futures_get_open_orders(symbol=symbol)
         for order in orders:
             if order['type'] == 'STOP_MARKET' and order['closePosition']:
                 client.futures_cancel_order(symbol=symbol, orderId=order['orderId'])
-                print(f"❌ {symbol}: Eski Stop-Loss iptal edildi.")
+                print(f"❌ {symbol}: Eski SL iptal edildi.")
 
-        # Şimdi yeni STOP_MARKET emrini kur
-        print(f"🛡️ {symbol}: Yeni Stop-Loss kuruluyor → {new_sl_price}")
+        # İptal ettikten sonra 2-3 saniye bekle
+        time.sleep(2)
 
-        # Coin'in tick size'ını çek
         exchange_info = client.futures_exchange_info()
-        tick_size = 0.01  # Default
+        tick_size = 0.01
         for s in exchange_info['symbols']:
             if s['symbol'] == symbol:
                 for f in s['filters']:
@@ -220,42 +179,40 @@ def update_stop_loss(symbol, new_sl_price, direction):
             stopPrice=str(corrected_sl_price),
             closePosition=True,
         )
+        print(f"✅ {symbol}: Yeni SL kuruldu → {corrected_sl_price}")
     except Exception as e:
-        print(f"❌ {symbol}: Stop-Loss güncelleme hatası: {e}")
+        print(f"❌ {symbol}: SL güncelleme hatası: {e}")
 
 def monitor_position(symbol, direction, qty, entry_price):
     try:
         next_level = 0
-        margin = (entry_price * qty) / LEVERAGE  # Burayı değiştirdim
-
         while is_position_open(symbol) and next_level < len(stepwise_sl):
             price = float(client.get_symbol_ticker(symbol=symbol)['price'])
-
-            # Gerçekleşen kâr (USDT cinsinden)
-            profit_usdt = (price - entry_price) * qty if direction == "BUY" else (entry_price - price) * qty
-
-            # Kâr yüzdesi (artık margin'e göre doğru hesaplanıyor)
-            profit_percentage = profit_usdt / margin
-
             level = stepwise_sl[next_level]
 
-            if profit_percentage >= level["trigger"]:
-                # Yeni Stop-Loss seviyesi
-                target_margin_value = margin * (1 + level["sl"])
-                new_sl_price = entry_price + (target_margin_value - margin) / qty if direction == "BUY" else entry_price - (target_margin_value - margin) / qty
+            trigger = level["trigger"]
+            sl = level["sl"]
 
-                update_stop_loss(symbol, new_sl_price, direction)
-                next_level += 1
+            if direction == "BUY":
+                if price >= entry_price * (1 + trigger):
+                    sl_price = entry_price * (1 + sl)
+                    update_stop_loss(symbol, sl_price, direction)
+                    next_level += 1
+            else:
+                if price <= entry_price * (1 - trigger):
+                    sl_price = entry_price * (1 - sl)
+                    update_stop_loss(symbol, sl_price, direction)
+                    next_level += 1
+
             time.sleep(10)
-
     except Exception as e:
-        print(f"❌ {symbol} için SL izleme hatası: {e}")
+        print(f"❌ {symbol}: SL izleme hatası: {e}")
 
-
+# === Pozisyon Açılışı ===
 def open_position(symbol, side, direction):
     try:
         if is_position_open(symbol):
-            print(f"⚠️ {symbol}: Zaten açık pozisyon var, yeni pozisyon açılmadı.")
+            print(f"⚠️ {symbol}: Zaten açık pozisyon var.")
             return
 
         df = get_data(symbol)
@@ -266,7 +223,7 @@ def open_position(symbol, side, direction):
             return
 
         set_leverage(symbol)
-        entry = float(client.get_symbol_ticker(symbol=symbol)['price'])
+        entry_price = float(client.get_symbol_ticker(symbol=symbol)['price'])
 
         client.futures_create_order(
             symbol=symbol,
@@ -276,17 +233,32 @@ def open_position(symbol, side, direction):
         )
         print(f"🚀 {symbol}: {side} pozisyon açıldı — Miktar: {qty}")
 
-        time.sleep(3)
-
-        # Başlangıçta %20 zarar için initial Stop-Loss koy
-        create_initial_stop_loss(symbol, entry, qty, side)
-
-        # Pozisyonu kâr için izlemeye başla
-        threading.Thread(target=monitor_position, args=(symbol, side, qty, entry)).start()
+        time.sleep(2)
+        create_initial_stop_loss(symbol, entry_price, qty, side)
+        threading.Thread(target=monitor_position, args=(symbol, side, qty, entry_price)).start()
     except Exception as e:
-        print(f"❌ {symbol} için pozisyon açma hatası: {e}")
+        print(f"❌ {symbol}: Pozisyon açma hatası: {e}")
 
-# === Formasyonlar ===
+# === Data ve Tarama Fonksiyonları ===
+def get_data(symbol, interval="15m", limit=100):
+    try:
+        klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
+        df = pd.DataFrame(klines, columns=[
+            'time','open','high','low','close','volume',
+            '_','__','___','____','_____','______'
+        ])
+        df = df[['open','high','low','close','volume']].astype(float)
+        df['rsi'] = ta.momentum.RSIIndicator(close=df['close']).rsi()
+        return df
+    except Exception as e:
+        print(f"❌ {symbol}: Veri alınamadı: {e}")
+        return None
+
+def rsi_confirmed(df, direction="long"):
+    rsi = df['rsi'].iloc[-1]
+    return (direction == "long" and rsi < 30) or (direction == "short" and rsi > 70)
+
+# === Formasyon Fonksiyonları Import ===
 from patterns.double_bottom import is_double_bottom
 from patterns.double_top import is_double_top
 from patterns.head_shoulders import is_head_shoulders
@@ -303,15 +275,32 @@ from patterns.bearish_flag import is_bearish_flag
 from patterns.bullish_pennant import is_bullish_pennant
 from patterns.bearish_pennant import is_bearish_pennant
 
-
-# === Coin Tarayıcı ===
+# === Tarama Fonksiyonu ===
 def scan_symbol(symbol):
     position_open_printed = False
+
+    patterns = [
+        (is_double_bottom, "BUY", "long", "Double Bottom"),
+        (is_double_top, "SELL", "short", "Double Top"),
+        (is_inverse_head_shoulders, "BUY", "long", "Inverse H&S"),
+        (is_head_shoulders, "SELL", "short", "Head & Shoulders"),
+        (is_asc_triangle, "BUY", "long", "Ascending Triangle"),
+        (is_desc_triangle, "SELL", "short", "Descending Triangle"),
+        (is_channel_down, "SELL", "short", "Channel Down"),
+        (is_channel_up, "BUY", "long", "Channel Up"),
+        (is_rising_wedge, "SELL", "short", "Rising Wedge"),
+        (is_falling_wedge, "BUY", "long", "Falling Wedge"),
+        (is_bullish_flag, "BUY", "long", "Bullish Flag"),
+        (is_bearish_flag, "SELL", "short", "Bearish Flag"),
+        (is_bullish_pennant, "BUY", "long", "Bullish Pennant"),
+        (is_bearish_pennant, "SELL", "short", "Bearish Pennant")
+    ]
+
     while True:
         try:
             if is_position_open(symbol):
                 if not position_open_printed:
-                    print(f"⚠️ {symbol} pozisyonu zaten açık.")
+                    print(f"⚠️ {symbol}: Pozisyon zaten açık.")
                     position_open_printed = True
                 time.sleep(60)
                 continue
@@ -322,45 +311,34 @@ def scan_symbol(symbol):
             if df is None:
                 time.sleep(60)
                 continue
+
             rsi = df['rsi'].iloc[-1]
 
-            patterns = [
-                (is_double_bottom, "BUY", "long", "Double Bottom"),
-                (is_double_top, "SELL", "short", "Double Top"),
-                (is_inverse_head_shoulders, "BUY", "long", "Inverse H&S"),
-                (is_head_shoulders, "SELL", "short", "H&S"),
-                (is_asc_triangle, "BUY", "long", "Ascending Triangle"),
-                (is_desc_triangle, "SELL", "short", "Descending Triangle"),
-                (is_channel_down, "SELL", "short", "Channel Down"),
-                (is_channel_up, "BUY", "long", "Channel Up"),
-                (is_rising_wedge, "SELL", "short", "Rising Wedge"),
-                (is_falling_wedge, "BUY", "long", "Falling Wedge"),
-                (is_bullish_flag, "BUY", "long", "Bullish Flag"),
-                (is_bearish_flag, "SELL", "short", "Bearish Flag"),
-                (is_bullish_pennant, "BUY", "long", "Bullish Pennant"),
-                (is_bearish_pennant, "SELL", "short", "Bearish Pennant")
-            ]
-
+            # Bütün formasyonları sırayla tarıyoruz
             for func, side, direction, name in patterns:
                 if func(df) and rsi_confirmed(df, direction):
-                    print(f"📌 {symbol}: {name} + RSI → {side}")
+                    print(f"📌 {symbol}: {name} + RSI onayı → {side}")
                     open_position(symbol, side, direction)
                     break
 
+            # Symmetrical Triangle özel case
             if is_sym_triangle(df):
                 if rsi < 30:
+                    print(f"📌 {symbol}: Symmetrical Triangle + Low RSI → BUY")
                     open_position(symbol, "BUY", "long")
                 elif rsi > 70:
+                    print(f"📌 {symbol}: Symmetrical Triangle + High RSI → SELL")
                     open_position(symbol, "SELL", "short")
 
             time.sleep(60)
+
         except Exception as e:
-            print(f"❌ {symbol} için genel tarama hatası: {e}")
+            print(f"❌ {symbol}: Taramada hata: {e}")
             time.sleep(10)
 
-# === Ana Başlatıcı ===
+# === Bot Başlangıcı ===
 def main():
-    print("🚀 Çoklu Coin Bot Başlatıldı...")
+    print("🚀 Bot Başlatıldı...")
     for symbol in SYMBOLS:
         threading.Thread(target=scan_symbol, args=(symbol,), daemon=True).start()
 
