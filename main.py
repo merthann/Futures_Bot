@@ -258,6 +258,31 @@ def rsi_confirmed(df, direction="long"):
     rsi = df['rsi'].iloc[-1]
     return (direction == "long" and rsi < 30) or (direction == "short" and rsi > 70)
 
+def close_all_positions():
+    for symbol in SYMBOLS:
+        try:
+            # Cancel all open SL/TP orders
+            client.futures_cancel_all_open_orders(symbol=symbol)
+            print(f"❌ {symbol}: Tüm açık emirler iptal edildi.")
+
+            # Close open position (if any)
+            positions = client.futures_position_information(symbol=symbol)
+            for pos in positions:
+                qty = float(pos['positionAmt'])
+                if qty != 0:
+                    side = "SELL" if qty > 0 else "BUY"
+                    client.futures_create_order(
+                        symbol=symbol,
+                        side=side,
+                        type="MARKET",
+                        quantity=abs(qty),
+                        reduceOnly=True
+                    )
+                    print(f"🔒 {symbol}: Pozisyon kapatıldı → {side} {abs(qty)}")
+        except Exception as e:
+            print(f"⚠️ {symbol}: Kapatma hatası: {e}")
+
+
 # === Formasyon Fonksiyonları Import ===
 from patterns.double_bottom import is_double_bottom
 from patterns.double_top import is_double_top
@@ -342,8 +367,17 @@ def main():
     for symbol in SYMBOLS:
         threading.Thread(target=scan_symbol, args=(symbol,), daemon=True).start()
 
-    while True:
-        time.sleep(3600)
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        print("\n🛑 Bot manuel olarak durduruldu. Pozisyonlar kapatılıyor...")
+        close_all_positions()
+        print("✅ Tüm pozisyonlar kapatıldı. Bot kapandı.")
+        time.sleep(2)
+        balance = get_usdt_balance
+        print("Son bakiyen: {balance:.2f} USDT.")
+        
 
 if __name__ == "__main__":
     main()
