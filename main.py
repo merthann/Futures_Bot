@@ -186,27 +186,57 @@ def update_stop_loss(symbol, new_sl_price, direction):
 def monitor_position(symbol, direction, qty, entry_price):
     try:
         next_level = 0
-        while is_position_open(symbol) and next_level < len(stepwise_sl):
-            price = float(client.get_symbol_ticker(symbol=symbol)['price'])
-            level = stepwise_sl[next_level]
 
-            trigger = level["trigger"]
-            sl = level["sl"]
+        while next_level < len(stepwise_sl):
+            try:
+                # Önce pozisyon açık mı kontrol et (3 defaya kadar dene)
+                position_open = False
+                retries = 3
+                while retries > 0:
+                    try:
+                        positions = client.futures_position_information(symbol=symbol)
+                        for pos in positions:
+                            if float(pos['positionAmt']) != 0:
+                                position_open = True
+                        break
+                    except Exception as e_pos:
+                        print(f"⚠️ {symbol}: Pozisyon kontrol hatası: {e_pos}")
+                        retries -= 1
+                        time.sleep(3)
 
-            if direction == "BUY":
-                if price >= entry_price * (1 + trigger):
-                    sl_price = entry_price * (1 + sl)
-                    update_stop_loss(symbol, sl_price, direction)
-                    next_level += 1
-            else:
-                if price <= entry_price * (1 - trigger):
-                    sl_price = entry_price * (1 - sl)
-                    update_stop_loss(symbol, sl_price, direction)
-                    next_level += 1
+                if not position_open:
+                    print(f"⚠️ {symbol}: Pozisyon kapalı ya da kontrol edilemedi, SL izleme bitirildi.")
+                    break
+
+                # Fiyatı çek
+                price = float(client.get_symbol_ticker(symbol=symbol)['price'])
+                level = stepwise_sl[next_level]
+
+                trigger = level["trigger"]
+                sl = level["sl"]
+
+                if direction == "BUY":
+                    if price >= entry_price * (1 + trigger):
+                        sl_price = entry_price * (1 + sl)
+                        update_stop_loss(symbol, sl_price, direction)
+                        next_level += 1
+                else:
+                    if price <= entry_price * (1 - trigger):
+                        sl_price = entry_price * (1 - sl)
+                        update_stop_loss(symbol, sl_price, direction)
+                        next_level += 1
+
+            except Exception as e_inner:
+                print(f"⚠️ {symbol}: SL izleme sırasında hata: {e_inner}")
+                # Hata olsa da döngü devam etsin
+                time.sleep(5)
+                continue
 
             time.sleep(10)
-    except Exception as e:
-        print(f"❌ {symbol}: SL izleme hatası: {e}")
+
+    except Exception as e_outer:
+        print(f"❌ {symbol}: SL izleme tamamen çöktü: {e_outer}")
+
 
 # === Pozisyon Açılışı ===
 def open_position(symbol, side, direction):
