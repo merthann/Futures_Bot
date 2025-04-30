@@ -375,8 +375,8 @@ def main():
         close_all_positions()
         print("✅ Tüm pozisyonlar kapatıldı. Bot kapandı.")
         time.sleep(2)
-        balance = get_usdt_balance
-        print("Son bakiyen: {balance:.2f} USDT.")
+        print("💰 Son bakiyen:", round(get_usdt_balance(), 2))
+
         
 
 if __name__ == "__main__":
