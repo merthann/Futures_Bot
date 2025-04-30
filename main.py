@@ -120,7 +120,7 @@ def is_position_open(symbol):
 def create_initial_stop_loss(symbol, entry_price, qty, direction):
     try:
         print(f"🛡️ {symbol}: İlk Stop-Loss hesaplanıyor")
-        price_move_pct = 0.0085  # %0.85 düşüş
+        price_move_pct = 0.001  # %1 düşüş
 
         if direction == "BUY":
             sl_price = entry_price * (1 - price_move_pct)
