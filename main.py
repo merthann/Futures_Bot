@@ -17,7 +17,8 @@ client = Client(api_key, api_secret)
 # === Ayarlar ===
 SYMBOLS = [
     "ETHUSDT", "BTCUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "ADAUSDT", "AVAXUSDT", "LTCUSDT", "DOGEUSDT"
+    "ADAUSDT", "AVAXUSDT", "LTCUSDT", "DOGEUSDT", "TRXUSDT",
+    "SUIUSDT", "BCHUSDT", "EOSUSDT"
 ]
 LEVERAGE = 30
 
