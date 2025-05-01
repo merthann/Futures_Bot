@@ -117,14 +117,15 @@ def is_position_open(symbol):
     return False
 
 # === Stop Loss Fonksiyonları ===
-def create_initial_stop_loss(symbol, entry_price, qty, direction):
+def create_initial_stop_loss(symbol, entry_price, qty, side):
     try:
         print(f"🛡️ {symbol}: İlk Stop-Loss hesaplanıyor")
-        price_move_pct = 0.001  # %1 düşüş
 
-        if direction == "BUY":
+        price_move_pct = 0.01  # %1 düşüşte SL tetiklensin
+
+        if side == "BUY":
             sl_price = entry_price * (1 - price_move_pct)
-        else:
+        else:  # SELL
             sl_price = entry_price * (1 + price_move_pct)
 
         exchange_info = client.futures_exchange_info()
@@ -140,7 +141,7 @@ def create_initial_stop_loss(symbol, entry_price, qty, direction):
 
         client.futures_create_order(
             symbol=symbol,
-            side="SELL" if direction == "BUY" else "BUY",
+            side="SELL" if side == "BUY" else "BUY",
             type="STOP_MARKET",
             stopPrice=str(corrected_sl_price),
             closePosition=True,
@@ -150,15 +151,18 @@ def create_initial_stop_loss(symbol, entry_price, qty, direction):
     except Exception as e:
         print(f"❌ {symbol}: İlk Stop-Loss kurulamadı: {e}")
 
-def update_stop_loss(symbol, new_sl_price, direction):
+
+def update_stop_loss(symbol, new_sl_price, side):
     try:
         orders = client.futures_get_open_orders(symbol=symbol)
         for order in orders:
-            if order['type'] == 'STOP_MARKET' and order['closePosition']:
-                client.futures_cancel_order(symbol=symbol, orderId=order['orderId'])
-                print(f"❌ {symbol}: Eski SL iptal edildi.")
+            if order['type'] == 'STOP_MARKET' and order.get('closePosition', False):
+                try:
+                    client.futures_cancel_order(symbol=symbol, orderId=order['orderId'])
+                    print(f"❌ {symbol}: Eski SL iptal edildi (orderId: {order['orderId']})")
+                except Exception as e_cancel:
+                    print(f"⚠️ {symbol}: SL iptal edilemedi: {e_cancel}")
 
-        # İptal ettikten sonra 2-3 saniye bekle
         time.sleep(2)
 
         exchange_info = client.futures_exchange_info()
@@ -174,61 +178,56 @@ def update_stop_loss(symbol, new_sl_price, direction):
 
         client.futures_create_order(
             symbol=symbol,
-            side="SELL" if direction == "BUY" else "BUY",
+            side="SELL" if side == "BUY" else "BUY",
             type="STOP_MARKET",
             stopPrice=str(corrected_sl_price),
             closePosition=True,
         )
         print(f"✅ {symbol}: Yeni SL kuruldu → {corrected_sl_price}")
+
     except Exception as e:
         print(f"❌ {symbol}: SL güncelleme hatası: {e}")
 
-def monitor_position(symbol, direction, qty, entry_price):
+def monitor_position(symbol, side, qty, entry_price):
     try:
         next_level = 0
 
         while next_level < len(stepwise_sl):
             try:
-                # Önce pozisyon açık mı kontrol et (3 defaya kadar dene)
+                # Pozisyon açık mı?
                 position_open = False
-                retries = 3
-                while retries > 0:
-                    try:
-                        positions = client.futures_position_information(symbol=symbol)
-                        for pos in positions:
-                            if float(pos['positionAmt']) != 0:
-                                position_open = True
+                positions = client.futures_position_information(symbol=symbol)
+                for pos in positions:
+                    if pos['symbol'] == symbol and float(pos['positionAmt']) != 0:
+                        position_open = True
                         break
-                    except Exception as e_pos:
-                        print(f"⚠️ {symbol}: Pozisyon kontrol hatası: {e_pos}")
-                        retries -= 1
-                        time.sleep(3)
 
                 if not position_open:
                     print(f"⚠️ {symbol}: Pozisyon kapalı ya da kontrol edilemedi, SL izleme bitirildi.")
                     break
 
-                # Fiyatı çek
+                # Fiyatı al
                 price = float(client.get_symbol_ticker(symbol=symbol)['price'])
                 level = stepwise_sl[next_level]
-
                 trigger = level["trigger"]
                 sl = level["sl"]
 
-                if direction == "BUY":
+                if side == "BUY":
                     if price >= entry_price * (1 + trigger):
                         sl_price = entry_price * (1 + sl)
-                        update_stop_loss(symbol, sl_price, direction)
+                        print(f"🔁 {symbol}: {next_level+1}. seviye tetiklendi → SL: {round(sl_price, 6)}")
+                        update_stop_loss(symbol, sl_price, side)
                         next_level += 1
-                else:
+
+                elif side == "SELL":
                     if price <= entry_price * (1 - trigger):
                         sl_price = entry_price * (1 - sl)
-                        update_stop_loss(symbol, sl_price, direction)
+                        print(f"🔁 {symbol}: {next_level+1}. seviye tetiklendi → SL: {round(sl_price, 6)}")
+                        update_stop_loss(symbol, sl_price, side)
                         next_level += 1
 
             except Exception as e_inner:
                 print(f"⚠️ {symbol}: SL izleme sırasında hata: {e_inner}")
-                # Hata olsa da döngü devam etsin
                 time.sleep(5)
                 continue
 
@@ -236,6 +235,7 @@ def monitor_position(symbol, direction, qty, entry_price):
 
     except Exception as e_outer:
         print(f"❌ {symbol}: SL izleme tamamen çöktü: {e_outer}")
+
 
 
 # === Pozisyon Açılışı ===
