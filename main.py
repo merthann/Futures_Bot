@@ -318,7 +318,8 @@ from patterns.double_bottom import is_double_bottom
 from patterns.double_top import is_double_top
 from patterns.head_shoulders import is_head_shoulders
 from patterns.inverse_head_shoulders import is_inverse_head_shoulders
-from patterns.triangle_sym import is_sym_triangle
+from patterns.sym_triangle_breakout import is_sym_triangle_breakout
+from patterns.sym_triangle_breakdown import is_sym_triangle_breakdown
 from patterns.triangle_desc import is_desc_triangle
 from patterns.triangle_asc import is_asc_triangle
 from patterns.channel_down import is_channel_down
@@ -329,6 +330,9 @@ from patterns.bullish_flag import is_bullish_flag
 from patterns.bearish_flag import is_bearish_flag
 from patterns.bullish_pennant import is_bullish_pennant
 from patterns.bearish_pennant import is_bearish_pennant
+
+from patterns.sym_triangle_breakout import is_sym_triangle_breakout
+from patterns.sym_triangle_breakdown import is_sym_triangle_breakdown
 
 # === Tarama Fonksiyonu ===
 def scan_symbol(symbol):
@@ -348,7 +352,9 @@ def scan_symbol(symbol):
         (is_bullish_flag, "BUY", "long", "Bullish Flag"),
         (is_bearish_flag, "SELL", "short", "Bearish Flag"),
         (is_bullish_pennant, "BUY", "long", "Bullish Pennant"),
-        (is_bearish_pennant, "SELL", "short", "Bearish Pennant")
+        (is_bearish_pennant, "SELL", "short", "Bearish Pennant"),
+        (is_sym_triangle_breakout, "BUY", "long", "Symmetrical Triangle Breakout"),
+        (is_sym_triangle_breakdown, "SELL", "short", "Symmetrical Triangle Breakdown")
     ]
 
     while True:
@@ -376,20 +382,12 @@ def scan_symbol(symbol):
                     open_position(symbol, side, direction)
                     break
 
-            # Symmetrical Triangle özel case
-            if is_sym_triangle(df):
-                if rsi < 30:
-                    print(f"📌 {symbol}: Symmetrical Triangle + Low RSI → BUY")
-                    open_position(symbol, "BUY", "long")
-                elif rsi > 70:
-                    print(f"📌 {symbol}: Symmetrical Triangle + High RSI → SELL")
-                    open_position(symbol, "SELL", "short")
-
             time.sleep(60)
 
         except Exception as e:
             print(f"❌ {symbol}: Taramada hata: {e}")
             time.sleep(10)
+
 
 # === Bot Başlangıcı ===
 def main():
