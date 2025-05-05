@@ -268,19 +268,21 @@ def get_data(symbol, interval="15m", limit=100):
         ])
         df = df[['open','high','low','close','volume']].astype(float)
 
-        # Add VWAP
+        # VWAP hesapla (NOT: .vwap değil, .vwap **parantezsiz**)
         vwap_indicator = ta.volume.VolumeWeightedAveragePrice(
             high=df['high'],
             low=df['low'],
             close=df['close'],
             volume=df['volume']
         )
-        df['vwap'] = vwap_indicator.vwap()
+        df['vwap'] = vwap_indicator.vwap  # ❗️ Parantez YOK
 
         return df
+
     except Exception as e:
         print(f"❌ {symbol}: Veri alınamadı: {e}")
         return None
+
 
 
 def vwap_confirmed(df, direction="long"):
