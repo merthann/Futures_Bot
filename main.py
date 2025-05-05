@@ -54,31 +54,12 @@ def get_usdt_balance():
         print(f"⚠️ Bakiye alınamadı: {e}")
     return 0
 
-def calculate_dynamic_quantity(symbol, rsi, direction):
+def calculate_dynamic_quantity(symbol, direction):
     try:
         balance = get_usdt_balance()
         price = float(client.get_symbol_ticker(symbol=symbol)['price'])
 
-        if direction == "long":
-            if rsi < 10:
-                portion = 0.12
-            elif rsi < 20:
-                portion = 0.1
-            elif rsi < 30:
-                portion = 0.08
-            else:
-                return 0
-        elif direction == "short":
-            if rsi > 90:
-                portion = 0.12
-            elif rsi > 80:
-                portion = 0.1
-            elif rsi > 70:
-                portion = 0.08
-            else:
-                return 0
-        else:
-            return 0
+        portion = 0.08  # Fixed risk allocation (can be made dynamic if needed)
 
         position_size_usdt = balance * portion
         qty = position_size_usdt * LEVERAGE / price
@@ -97,6 +78,7 @@ def calculate_dynamic_quantity(symbol, rsi, direction):
     except Exception as e:
         print(f"⚠️ {symbol} miktar hesaplama hatası: {e}")
         return 0
+
 
 def set_leverage(symbol):
     try:
@@ -249,10 +231,13 @@ def open_position(symbol, side, direction):
             return
 
         df = get_data(symbol)
-        rsi = df['rsi'].iloc[-1]
-        qty = calculate_dynamic_quantity(symbol, rsi, direction)
+        if df is None or df['vwap'].isnull().iloc[-1]:
+            print(f"❌ {symbol}: Veri eksik, pozisyon açılmıyor.")
+            return
+
+        qty = calculate_dynamic_quantity(symbol, direction)
         if qty == 0:
-            print(f"⛔ {symbol}: RSI uygun değil veya bakiye yetersiz.")
+            print(f"⛔ {symbol}: Miktar hesaplanamadı veya bakiye yetersiz.")
             return
 
         set_leverage(symbol)
@@ -272,6 +257,7 @@ def open_position(symbol, side, direction):
     except Exception as e:
         print(f"❌ {symbol}: Pozisyon açma hatası: {e}")
 
+
 # === Data ve Tarama Fonksiyonları ===
 def get_data(symbol, interval="15m", limit=100):
     try:
@@ -281,15 +267,27 @@ def get_data(symbol, interval="15m", limit=100):
             '_','__','___','____','_____','______'
         ])
         df = df[['open','high','low','close','volume']].astype(float)
-        df['rsi'] = ta.momentum.RSIIndicator(close=df['close']).rsi()
+
+        # Add VWAP
+        vwap_indicator = ta.volume.VolumeWeightedAveragePrice(
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            volume=df['volume']
+        )
+        df['vwap'] = vwap_indicator.vwap()
+
         return df
     except Exception as e:
         print(f"❌ {symbol}: Veri alınamadı: {e}")
         return None
 
-def rsi_confirmed(df, direction="long"):
-    rsi = df['rsi'].iloc[-1]
-    return (direction == "long" and rsi < 30) or (direction == "short" and rsi > 70)
+
+def vwap_confirmed(df, direction="long"):
+    price = df['close'].iloc[-1]
+    vwap = df['vwap'].iloc[-1]
+    return (direction == "long" and price > vwap) or (direction == "short" and price < vwap)
+
 
 def close_all_positions():
     for symbol in SYMBOLS:
@@ -372,16 +370,14 @@ def scan_symbol(symbol):
                 position_open_printed = False
 
             df = get_data(symbol)
-            if df is None:
+            if df is None or df['vwap'].isnull().iloc[-1]:
                 time.sleep(60)
                 continue
 
-            rsi = df['rsi'].iloc[-1]
-
             # Bütün formasyonları sırayla tarıyoruz
             for func, side, direction, name in patterns:
-                if func(df) and rsi_confirmed(df, direction):
-                    print(f"📌 {symbol}: {name} + RSI onayı → {side}")
+                if func(df) and vwap_confirmed(df, direction):
+                    print(f"📌 {symbol}: {name} + VWAP onayı → {side}")
                     open_position(symbol, side, direction)
                     break
 
