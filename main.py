@@ -18,8 +18,10 @@ client = Client(api_key, api_secret)
 SYMBOLS = [
     "ETHUSDT", "BTCUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
     "ADAUSDT", "AVAXUSDT", "LTCUSDT", "DOGEUSDT", "TRXUSDT",
-    "SUIUSDT", "BCHUSDT", "EOSUSDT"
+    "SUIUSDT", "BCHUSDT", "EOSUSDT", "TRUMPUSDT",
+    "LAYERUSDT", "TURBOUSDT", "INITUSDT", "LINKUSDT"
 ]
+
 LEVERAGE = 30
 
 # === Stepwise SL tablosu ===
