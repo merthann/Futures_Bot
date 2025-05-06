@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 # === Binance API Bilgileri ===
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
@@ -21,6 +22,11 @@ SYMBOLS = [
     "SUIUSDT", "BCHUSDT", "EOSUSDT", "TRUMPUSDT",
     "LAYERUSDT", "TURBOUSDT", "INITUSDT", "LINKUSDT"
 ]
+
+# Pozisyon kapandıktan sonra sembole göre giriş yasağı süresi (timestamp)
+symbol_cooldowns = {}
+COOLDOWN_SECONDS = 3600  # 30 dakika = 1800 saniye
+
 
 LEVERAGE = 30
 
@@ -189,6 +195,7 @@ def monitor_position(symbol, side, qty, entry_price):
 
                 if not position_open:
                     print(f"⚠️ {symbol}: Pozisyon kapalı ya da kontrol edilemedi, SL izleme bitirildi.")
+                    symbol_cooldowns[symbol] = time.time()  # Cooldown başlat
                     break
 
                 # Fiyatı al
@@ -362,6 +369,18 @@ def scan_symbol(symbol):
 
     while True:
         try:
+            # === Cooldown kontrolü ===
+            if symbol in symbol_cooldowns:
+                elapsed = time.time() - symbol_cooldowns[symbol]
+                if elapsed < COOLDOWN_SECONDS:
+                    remaining = int(COOLDOWN_SECONDS - elapsed)
+                    print(f"⏳ {symbol}: Cooldown aktif, {remaining} sn kaldı.")
+                    time.sleep(10)
+                    continue
+                else:
+                    del symbol_cooldowns[symbol]
+
+            # === Açık pozisyon kontrolü ===
             if is_position_open(symbol):
                 if not position_open_printed:
                     print(f"⚠️ {symbol}: Pozisyon zaten açık.")
@@ -376,7 +395,7 @@ def scan_symbol(symbol):
                 time.sleep(60)
                 continue
 
-            # Bütün formasyonları sırayla tarıyoruz
+            # === Formasyon + VWAP kontrolü ===
             for func, side, direction, name in patterns:
                 if func(df) and vwap_confirmed(df, direction):
                     print(f"📌 {symbol}: {name} + VWAP onayı → {side}")
@@ -388,8 +407,6 @@ def scan_symbol(symbol):
         except Exception as e:
             print(f"❌ {symbol}: Taramada hata: {e}")
             time.sleep(10)
-
-
 # === Bot Başlangıcı ===
 def main():
     print("🚀 Bot Başlatıldı...")
