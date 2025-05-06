@@ -25,7 +25,7 @@ SYMBOLS = [
 
 # Pozisyon kapandıktan sonra sembole göre giriş yasağı süresi (timestamp)
 symbol_cooldowns = {}
-COOLDOWN_SECONDS = 3600  # 30 dakika = 1800 saniye
+COOLDOWN_SECONDS = 2000  # 30 dakika = 1800 saniye
 
 
 LEVERAGE = 30
@@ -374,14 +374,15 @@ def scan_symbol(symbol):
             if symbol in symbol_cooldowns:
                 elapsed = time.time() - symbol_cooldowns[symbol]
                 if elapsed < COOLDOWN_SECONDS:
-                    remaining = int(COOLDOWN_SECONDS - elapsed)
-                    print(f"⏳ {symbol}: Cooldown aktif, {remaining} sn kaldı.")
-                    cooldown_logged = True
+                    if not cooldown_logged:
+                        remaining = int(COOLDOWN_SECONDS - elapsed)
+                        print(f"⏳ {symbol}: Cooldown aktif, {remaining} sn kaldı.")
+                        cooldown_logged = True
                     time.sleep(10)
                     continue
                 else:
                     del symbol_cooldowns[symbol]
-                    cooldown_logged = False
+                    cooldown_logged = False  # ➤ cooldown bittiğinde sıfırla
 
             # === Açık pozisyon kontrolü ===
             if is_position_open(symbol):

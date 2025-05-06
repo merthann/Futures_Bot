@@ -1,21 +1,41 @@
-def is_channel_up(df, tolerance=0.005, breakdown_candles=2):
-    highs = df['high'].values[-20:]
-    lows = df['low'].values[-20:]
-    closes = df['close'].values
+from scipy.signal import argrelextrema
+import numpy as np
 
-    rising = all(
-        highs[i] >= highs[i - 1] * (1 - tolerance) and
-        lows[i] >= lows[i - 1] * (1 - tolerance)
-        for i in range(1, len(highs))
-    )
+def is_channel_up(df, deviation=0.01, breakdown_candles=2):
+    closes = df['close'].values[-40:]
+    highs = df['high'].values[-40:]
+    lows = df['low'].values[-40:]
 
-    if not rising:
+    # Swing highs ve lows bul
+    peak_idx = argrelextrema(highs, np.greater)[0]
+    trough_idx = argrelextrema(lows, np.less)[0]
+
+    if len(peak_idx) < 2 or len(trough_idx) < 2:
         return False
 
-    # Breakdown kontrolü: son kapanışlar kanalın altına düşmüş mü
-    min_low = min(lows)
+    # Son 2 swing high ve low al
+    high_points = [(i, highs[i]) for i in peak_idx[-2:]]
+    low_points = [(i, lows[i]) for i in trough_idx[-2:]]
+
+    # Üst trend çizgisi
+    x_high, y_high = zip(*high_points)
+    m_high, b_high = np.polyfit(x_high, y_high, 1)
+
+    # Alt trend çizgisi
+    x_low, y_low = zip(*low_points)
+    m_low, b_low = np.polyfit(x_low, y_low, 1)
+
+    # Trend yukarı mı?
+    if m_high < 0 or m_low < 0:
+        return False  # Her iki çizgi de pozitif eğimli olmalı
+
+    # Son kapanışlar trend çizgilerinin dışına çıkmamış mı?
     for i in range(1, breakdown_candles + 1):
-        if closes[-i] < min_low:
-            return False  # Aşağı kırılım varsa long sinyali verilmez
+        expected_high = m_high * (-i) + b_high
+        expected_low = m_low * (-i) + b_low
+        price = closes[-i]
+
+        if price < expected_low * (1 - deviation) or price > expected_high * (1 + deviation):
+            return False
 
     return True

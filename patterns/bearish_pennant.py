@@ -1,23 +1,24 @@
-def is_bearish_pennant(df, tolerance=0.005, breakdown_confirm_candles=2):
+import numpy as np
+from scipy.stats import linregress
+
+def is_bearish_pennant(df, slope_threshold=0.02, max_std=0.005, breakdown_confirm_candles=2):
     closes = df['close'].values[-30:]
     if len(closes) < 30:
         return False
 
-    # İlk 10 mumda düşüş var mı?
-    initial_drop = closes[10] < closes[0]
+    # 1️⃣ İlk 10 mumda güçlü düşüş (direk kısmı)
+    down_leg = closes[:10]
+    slope, _, _, _, _ = linregress(np.arange(len(down_leg)), down_leg)
+    initial_drop = slope < -slope_threshold
 
-    # Konsolidasyon: küçük dalgalanma (daralan fiyat hareketi)
-    consolidation = all(
-        abs(closes[i] - closes[i - 1]) / closes[i - 1] < tolerance
-        for i in range(11, 30)
-    )
+    # 2️⃣ Konsolidasyon (sonraki 20 mum)
+    flag_part = closes[10:]
+    slope_flag, _, _, _, _ = linregress(np.arange(len(flag_part)), flag_part)
+    std_flag = np.std(flag_part)
+    consolidation = abs(slope_flag) < slope_threshold and std_flag < max_std
 
-    if initial_drop and consolidation:
-        # Pennant'ın alt sınırı
-        breakdown_level = min(closes[10:])
-        for i in range(1, breakdown_confirm_candles + 1):
-            if closes[-i] > breakdown_level:
-                return False
-        return True
+    # 3️⃣ Kırılım kontrolü: son mumlar aşağı kırmış mı
+    breakdown_level = min(flag_part)
+    confirmed = all(closes[-i] < breakdown_level for i in range(1, breakdown_confirm_candles + 1))
 
-    return False
+    return initial_drop and consolidation and confirmed
