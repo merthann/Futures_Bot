@@ -347,6 +347,7 @@ from patterns.sym_triangle_breakdown import is_sym_triangle_breakdown
 # === Tarama Fonksiyonu ===
 def scan_symbol(symbol):
     position_open_printed = False
+    cooldown_logged = False
 
     patterns = [
         (is_double_bottom, "BUY", "long", "Double Bottom"),
@@ -375,10 +376,12 @@ def scan_symbol(symbol):
                 if elapsed < COOLDOWN_SECONDS:
                     remaining = int(COOLDOWN_SECONDS - elapsed)
                     print(f"⏳ {symbol}: Cooldown aktif, {remaining} sn kaldı.")
+                    cooldown_logged = True
                     time.sleep(10)
                     continue
                 else:
                     del symbol_cooldowns[symbol]
+                    cooldown_logged = False
 
             # === Açık pozisyon kontrolü ===
             if is_position_open(symbol):
